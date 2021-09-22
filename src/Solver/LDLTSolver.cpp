@@ -47,4 +47,4 @@ namespace DeepPhysicsSofa::solver {
 #endif
     ;
 
-} // namespace SofaCaribou::solver
+} // namespace DeepPhysicsSofa::solver

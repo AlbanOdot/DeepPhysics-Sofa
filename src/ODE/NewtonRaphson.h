@@ -20,7 +20,6 @@ namespace DeepPhysicsSofa::ode {
 
 /**
  * This class implements a NewtonRaphson solver for SOFA.
- *
  */
     class NewtonRaphson : public ODEInterface {
     public:

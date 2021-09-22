@@ -51,6 +51,9 @@ namespace DeepPhysicsSofa::ode {
         set_pattern_analysis_strategy(PatternAnalysisStrategy::BEGINNING_OF_THE_TIME_STEP);
     }
 
+/*
+ * https://github.com/jnbrunet/caribou/blob/master/src/SofaCaribou/Ode/NewtonRaphsonSolver.cpp
+ */
     void NewtonRaphson::solve(const ExecParams *params, SReal dt, MultiVecCoordId x_id, MultiVecDerivId v_id) {
         using namespace sofa::helper::logging;
         using namespace std::chrono;
