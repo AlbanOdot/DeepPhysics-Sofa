@@ -5,7 +5,7 @@ set(HEADER_FILES
         )
 
 set(SOURCE_FILES
-        DPS.cpp
+        DeepPhysicsSofaPython.cpp
         Solver/LDLTSolver.cpp
         )
 
@@ -15,10 +15,11 @@ set(PYTHON_FILES
 
 
 find_package(SofaPython3 REQUIRED)
-DPS_add_python_module(DeepPhysicsSofa
+
+DeepPhysicsSofa_add_python_module(DeepPhysicsSofa
         TARGET_NAME       ${PROJECT_NAME}
         TARGET_ALIAS      DeepPhysicsSofa::Python.DeepPhysicsSofa
-        TARGET_DEPENDS    Caribou::Geometry Caribou::Python.Config DeepPhysicsSofa SofaCaribou SofaPython3::Bindings.Sofa.Core
+        TARGET_DEPENDS    DeepPhysicsSofa SofaCaribou SofaPython3::Bindings.Sofa.Core
         COMPONENT_NAME    DeepPhysicsSofa
         PACKAGE_NAME      DeepPhysicsSofa
         DESTINATION       DeepPhysicsSofa

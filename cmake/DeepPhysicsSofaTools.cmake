@@ -133,6 +133,7 @@ function(DeepPhysicsSofa_add_python_module NAME)
         else()
             target_link_libraries(${TARGET_NAME} PUBLIC pybind11::module)
 
+
             # Equivalent to pybind11_extension(${TARGET_NAME}) which doesn't exists on pybind11 versions < 5
             set_target_properties(${TARGET_NAME} PROPERTIES PREFIX "" SUFFIX "${PYTHON_MODULE_EXTENSION}")
 
@@ -152,7 +153,7 @@ function(DeepPhysicsSofa_add_python_module NAME)
             endif()
         endif()
 
-        target_link_libraries(${TARGET_NAME} PUBLIC ${TARGET_DEPENDS})
+        target_link_libraries(${TARGET_NAME} PUBLIC ${TARGET_DEPENDS} -ldl)
 
         if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
             target_compile_options(${TARGET_NAME} PRIVATE -fsized-deallocation)

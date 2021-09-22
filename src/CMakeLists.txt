@@ -80,13 +80,13 @@ DeepPhysicsSofa_add_target_to_component (
 )
 
 find_package(SofaPython3 QUIET)
-#add_subdirectory(Python)
+add_subdirectory(Python)
 
-#install (
-#        EXPORT DeepPhysicsSofaTargets
-#        DESTINATION "lib/cmake/DeepPhysicsSofa"
-#        COMPONENT headers
-#)
+install (
+        EXPORT DeepPhysicsSofaTargets
+        DESTINATION "lib/cmake/DeepPhysicsSofa"
+        COMPONENT headers
+)
 
 # This is required to be able to do "find_package(SofaCaribou)"
 DeepPhysicsSofa_create_package(DeepPhysicsSofa ${DeepPhysicsSofa_VERSION})
