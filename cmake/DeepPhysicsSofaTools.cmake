@@ -15,7 +15,7 @@ function(dump_cmake_variables)
     endforeach()
 endfunction()
 
-function(DPS_link from to)
+function(DeepPhysicsSofa_link from to)
     IF(WIN32)
         SET(LINK copy_if_different)
     ELSE(WIN32)
@@ -25,7 +25,7 @@ function(DPS_link from to)
     execute_process(COMMAND ${CMAKE_COMMAND} -E ${LINK} ${from} ${to})
 endfunction()
 
-# DPS_add_python_module ( <name>
+# DeepPhysicsSofa_add_python_module ( <name>
 #                             TARGET_NAME          <target_name>        # Default to <name>
 #                             TARGET_ALIAS         <target_alias>
 #                             TARGET_VERSION       <version>            # defaults to ${PACKAGE_NAME}_VERSION
@@ -57,7 +57,7 @@ endfunction()
 # and then installed in ${CMAKE_INSTALL_PREFIX}/${LIBRARY_DESTINATION}. Finally, ${PYTHON_TEST_FILES} will
 # be configured (if suffixed by .in) or linked into the compilation directory ${CMAKE_BINARY_DIR}/${RUNTIME_DESTINATION}
 # and then installed in ${CMAKE_INSTALL_PREFIX}/${RUNTIME_DESTINATION}.
-function(DPS_add_python_module NAME)
+function(DeepPhysicsSofa_add_python_module NAME)
     set(options QUIET)
     set(oneValueArgs TARGET_NAME TARGET_ALIAS TARGET_VERSION COMPONENT_NAME PACKAGE_NAME DESTINATION PREFIX HEADER_SRC_PREFIX HEADER_BUILD_PREFIX HEADER_INSTALL_PREFIX LIBRARY_DESTINATION RUNTIME_DESTINATION)
     set(multiValueArgs SOURCE_FILES PUBLIC_HEADERS PRIVATE_HEADERS PYTHON_FILES PYTHON_TEST_FILES TARGET_DEPENDS)
@@ -168,7 +168,7 @@ function(DPS_add_python_module NAME)
         )
         message(STATUS "${TARGET_NAME}: ${CMAKE_BINARY_DIR}/${LIBRARY_DESTINATION}")
 
-        DPS_add_target_to_component(
+        DeepPhysicsSofa_add_target_to_component(
             TARGET_NAME            ${TARGET_NAME}
             COMPONENT_NAME         ${COMPONENT_NAME}
             PACKAGE_NAME           ${PACKAGE_NAME}
@@ -183,9 +183,9 @@ function(DPS_add_python_module NAME)
         )
 
         # This will get the relative path from the current binding library to the plugin's "lib" directory.
-        # As an example, build/lib/python3.7/site-packages/DPS/Geometry/DPSGeometryPython.cpython-39-x86_64-linux.so
+        # As an example, build/lib/python3.7/site-packages/DeepPhysicsSofa/Geometry/DeepPhysicsSofaGeometryPython.cpython-39-x86_64-linux.so
         # will give "../../../.."
-        # We can thereby add this path to the installation RPATH in order to let the binding library find DPS's
+        # We can thereby add this path to the installation RPATH in order to let the binding library find DeepPhysicsSofa's
         # libraries.
         file(RELATIVE_PATH path_to_lib  "${CMAKE_BINARY_DIR}/${LIBRARY_DESTINATION}" "${CMAKE_BINARY_DIR}/lib")
         list(APPEND target_rpath
@@ -211,7 +211,7 @@ function(DPS_add_python_module NAME)
             configure_file("${t}" "${CMAKE_BINARY_DIR}/${LIBRARY_DESTINATION}/${dir_from_current}/${output_filename}")
             install(FILES "${CMAKE_BINARY_DIR}/${LIBRARY_DESTINATION}/${dir_from_current}/${output_filename}" DESTINATION ${LIBRARY_DESTINATION}/${dir_from_current})
         else()
-            DPS_link("${CMAKE_CURRENT_SOURCE_DIR}/${dir_from_current}/${output_filename}" "${CMAKE_BINARY_DIR}/${LIBRARY_DESTINATION}/${dir_from_current}/${output_filename}")
+            DeepPhysicsSofa_link("${CMAKE_CURRENT_SOURCE_DIR}/${dir_from_current}/${output_filename}" "${CMAKE_BINARY_DIR}/${LIBRARY_DESTINATION}/${dir_from_current}/${output_filename}")
             install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/${dir_from_current}/${output_filename}" DESTINATION ${LIBRARY_DESTINATION}/${dir_from_current})
         endif()
 
@@ -229,20 +229,20 @@ function(DPS_add_python_module NAME)
             configure_file("${t}" "${CMAKE_BINARY_DIR}/${RUNTIME_DESTINATION}/${dir_from_current}/${output_filename}")
             install(FILES "${CMAKE_BINARY_DIR}/${RUNTIME_DESTINATION}/${dir_from_current}/${output_filename}" DESTINATION ${RUNTIME_DESTINATION}/${dir_from_current})
         else()
-            DPS_link("${CMAKE_CURRENT_SOURCE_DIR}/${dir_from_current}/${output_filename}" "${CMAKE_BINARY_DIR}/${RUNTIME_DESTINATION}/${dir_from_current}/${output_filename}")
+            DeepPhysicsSofa_link("${CMAKE_CURRENT_SOURCE_DIR}/${dir_from_current}/${output_filename}" "${CMAKE_BINARY_DIR}/${RUNTIME_DESTINATION}/${dir_from_current}/${output_filename}")
             install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/${dir_from_current}/${output_filename}" DESTINATION ${RUNTIME_DESTINATION}/${dir_from_current})
         endif()
     endforeach()
 
 endfunction()
 
-# DPS_create_package (
+# DeepPhysicsSofa_create_package (
 #     PACKAGE_NAME <package_name>
 # )
 #
 # Create a CMake package that will be later found by find_package(PACKAGE_NAME). This macro handles the creation
 # and installation of PACKAGE_NAMEVersion.cmake and PACKAGE_NAMEConfig.cmake (if found).
-macro(DPS_create_package PACKAGE_NAME PACKAGE_VERSION)
+macro(DeepPhysicsSofa_create_package PACKAGE_NAME PACKAGE_VERSION)
 
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${PACKAGE_NAME}Config.cmake.in")
         get_property(component_names GLOBAL PROPERTY "${PACKAGE_NAME}_COMPONENTS")
@@ -273,7 +273,7 @@ macro(DPS_create_package PACKAGE_NAME PACKAGE_VERSION)
 
 endmacro()
 
-# DPS_add_component_to_package (
+# DeepPhysicsSofa_add_component_to_package (
 #     PACKAGE_NAME       <package_name>
 #     COMPONENT_NAME     <component_name>
 #     COMPONENT_VERSION  <component_version>  # Default to ${PACKAGE_NAME}_VERSION
@@ -282,7 +282,7 @@ endmacro()
 # Create a CMake component and add it to a given package. This component will be later found using
 # find_package(PACKAGE_NAME). This macro handles the creation and installation of PACKAGE_NAMEVersion.cmake
 # and PACKAGE_NAMEConfig.cmake (if found).
-macro(DPS_add_component_to_package)
+macro(DeepPhysicsSofa_add_component_to_package)
     set(oneValueArgs COMPONENT_NAME PACKAGE_NAME)
     set(multiValueArgs )
     set(optionalArgs )
@@ -332,7 +332,7 @@ macro(DPS_add_component_to_package)
     endif()
 endmacro()
 
-# DPS_add_target_to_component (
+# DeepPhysicsSofa_add_target_to_component (
 #     TARGET_NAME           <target_name>
 #     COMPONENT_NAME        <component_name>
 #     PACKAGE_NAME          <package_name>
@@ -350,7 +350,7 @@ endmacro()
 #     ARCHIVE_DESTINATION   <[folder_path]>     # default to "lib"
 # )
 #
-# Adds a target to a cmake component created using DPS_add_component.
+# Adds a target to a cmake component created using DeepPhysicsSofa_add_component.
 # The PUBLIC_HEADERS and PRIVATE_HEADERS arguments allows to link header
 # files to the build directory. If the header files extension suffix is ".in:",
 # for example "config.h.in", they will be configured by cmake instead of linked.
@@ -358,7 +358,7 @@ endmacro()
 #
 # The HEADER_PREFIX can be used to specify the relative prefix path where the header files will be configured/installed.
 # It is default to ${PACKAGE_NAME}/${COMPONENT_NAME}.
-macro(DPS_add_target_to_component)
+macro(DeepPhysicsSofa_add_target_to_component)
     set(oneValueArgs TARGET_NAME COMPONENT_NAME PACKAGE_NAME HEADER_SRC_PREFIX HEADER_BUILD_PREFIX HEADER_INSTALL_PREFIX RUNTIME_DESTINATION LIBRARY_DESTINATION ARCHIVE_DESTINATION)
     set(multiValueArgs PUBLIC_HEADERS PRIVATE_HEADERS)
     set(optionalArgs )
@@ -404,11 +404,11 @@ macro(DPS_add_target_to_component)
         set(VISIBILITY INTERFACE)
     endif()
 
-    # Set the preprocessor token DPS_BUILD_{TARGET_NAME}
+    # Set the preprocessor token DeepPhysicsSofa_BUILD_{TARGET_NAME}
     if (NOT TARGET_INTERFACE)
         string(TOUPPER "${ARG_TARGET_NAME}" TARGET_NAME_UPPER)
         string(REPLACE "." "_" TARGET_NAME_UPPER "${TARGET_NAME_UPPER}")
-        target_compile_definitions(${ARG_TARGET_NAME} PRIVATE "-DDPS_BUILD_${TARGET_NAME_UPPER}")
+        target_compile_definitions(${ARG_TARGET_NAME} PRIVATE "-DDeepPhysicsSofa_BUILD_${TARGET_NAME_UPPER}")
     endif()
 
     # Target properties

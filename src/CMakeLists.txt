@@ -1,15 +1,20 @@
 set(HEADER_FILES
         Event/PredictBeginEvent.h
         Event/PredictEndEvent.h
-        ODE/HybridNewtonRaphson.h
+        Event/PredictionPickedEvent.h
+        ODE/ODEInterface.h
         ODE/NewtonRaphson.h
-        Solver/LDLTSolver.h)
+        ODE/HybridNewtonRaphson.h
+        Solver/LDLTSolver.h
+        )
 
 set(SOURCE_FILES
         Event/PredictBeginEvent.cpp
         Event/PredictEndEvent.cpp
-        ODE/HybridNewtonRaphson.cpp
+        Event/PredictionPickedEvent.cpp
+        ODE/ODEInterface.cpp
         ODE/NewtonRaphson.cpp
+        ODE/HybridNewtonRaphson.cpp
         Solver/LDLTSolver.cpp
         )
 
@@ -28,7 +33,7 @@ if (macos)
 endif()
 
 add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${TEMPLATE_FILES} ${HEADER_FILES})
-add_library(DPS::Plugin ALIAS ${PROJECT_NAME})
+add_library(DeepPhysicsSofa::Plugin ALIAS ${PROJECT_NAME})
 
 target_link_libraries(${PROJECT_NAME} PUBLIC SofaCore SofaBaseTopology SofaBaseLinearSolver SofaEigen2Solver)
 target_link_libraries(${PROJECT_NAME} PUBLIC Caribou::Algebra Caribou::Geometry Caribou::Topology Caribou::Mechanics SofaCaribou)
@@ -43,13 +48,33 @@ list(APPEND target_rpath
 
 set_target_properties(${PROJECT_NAME} PROPERTIES INSTALL_RPATH "${target_rpath}" )
 
+if (DeepPhysicsSofa_WITH_MKL)
+    set(MKL_STATIC ON)
+    if (NOT DeepPhysicsSofa_WITH_OPENMP)
+        set(MKL_THREADING_VENDOR SEQUENTIAL)
+    endif()
+    find_package(MKL REQUIRED QUIET)
+
+    target_compile_definitions(${PROJECT_NAME} PUBLIC DeepPhysicsSofa_WITH_MKL)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE EIGEN_USE_MKL_ALL)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${MKL_INCLUDE_DIRS})
+    target_link_libraries(${PROJECT_NAME} PRIVATE  ${MKL_LIBRARIES})
+    target_link_options(${PROJECT_NAME} PRIVATE ${MKL_LINKER_FLAGS} -ldl)
+endif()
+
+if (DeepPhysicsSofa_WITH_OPENMP)
+    find_package(OpenMP REQUIRED QUIET)
+    target_link_libraries(${PROJECT_NAME} PUBLIC OpenMP::OpenMP_CXX)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC DeepPhysicsSofa_WITH_OPENMP)
+endif()
+
 set_target_properties(${PROJECT_NAME} PROPERTIES DEBUG_POSTFIX "_d")
 
 
-DPS_add_target_to_component (
+DeepPhysicsSofa_add_target_to_component (
         TARGET_NAME        ${PROJECT_NAME}
-        COMPONENT_NAME     SofaCaribou
-        PACKAGE_NAME       SofaCaribou
+        COMPONENT_NAME     DeepPhysicsSofa
+        PACKAGE_NAME       DeepPhysicsSofa
         PUBLIC_HEADERS     "${TEMPLATE_FILES};${HEADER_FILES}"
         HEADER_SRC_PREFIX  "${CMAKE_CURRENT_SOURCE_DIR}/.."
 )
@@ -58,15 +83,15 @@ find_package(SofaPython3 QUIET)
 #add_subdirectory(Python)
 
 #install (
-#        EXPORT DPSTargets
-#        DESTINATION "lib/cmake/DPS"
+#        EXPORT DeepPhysicsSofaTargets
+#        DESTINATION "lib/cmake/DeepPhysicsSofa"
 #        COMPONENT headers
 #)
 
 # This is required to be able to do "find_package(SofaCaribou)"
-DPS_create_package(DPS ${DPS_VERSION})
+DeepPhysicsSofa_create_package(DeepPhysicsSofa ${DeepPhysicsSofa_VERSION})
 # Make the target relocatable
-set_target_properties(${PROJECT_NAME} PROPERTIES RELOCATABLE_INSTALL_DIR "plugins/DPS")
+set_target_properties(${PROJECT_NAME} PROPERTIES RELOCATABLE_INSTALL_DIR "plugins/DeepPhysicsSofa")
 set_target_properties(${PROJECT_NAME} PROPERTIES EXPORT_PROPERTIES "RELOCATABLE_INSTALL_DIR")
 
 if (SOFA_VERSION VERSION_GREATER_EQUAL "20.12.00")

@@ -12,14 +12,14 @@ DISABLE_ALL_WARNINGS_BEGIN
 #include <sofa/core/objectmodel/Link.h>
 #include <sofa/helper/OptionsGroup.h>
 #include <SofaBaseLinearSolver/DefaultMultiMatrixAccessor.h>
-DISABLE_ALL_WARNINGS_END
+        DISABLE_ALL_WARNINGS_END
 
 #include <memory>
 
 namespace DeepPhysicsSofa::ode {
 
 /**
- * This class implements a HybridNewtonRaphson solver for SOFA.
+ * This class implements a Hybrid Newton Raphson solver for SOFA.
  *
  * Following this article https://hal.archives-ouvertes.fr/hal-03327818/document
  *
@@ -40,23 +40,21 @@ namespace DeepPhysicsSofa::ode {
         CARIBOU_API
         void solve (const sofa::core::ExecParams* params, SReal dt, sofa::core::MultiVecCoordId x_id, sofa::core::MultiVecDerivId v_id) override;
 
-
     protected:
 
-        virtual void assemble_rhs_vector(const sofa::core::MechanicalParams & mechanical_parameters,
-                                         const sofa::core::behavior::MultiMatrixAccessor & matrix_accessor,
-                                         sofa::core::MultiVecDerivId & f_id,
-                                         sofa::defaulttype::BaseVector * f);
+        // Only compute the residual of the system
+        void solveResidual(const sofa::core::ExecParams* params, SReal dt, sofa::core::MultiVecCoordId x_id, sofa::core::MultiVecDerivId v_id);
 
-        virtual void assemble_system_matrix(const sofa::core::MechanicalParams & mechanical_parameters,
-                                            sofa::component::linearsolver::DefaultMultiMatrixAccessor & matrix_accessor,
-                                            sofa::defaulttype::BaseMatrix * A);
+        // Compute both residual and ground truth of the system
+        void solveInversion(const sofa::core::ExecParams* params, SReal dt, sofa::core::MultiVecCoordId x_id, sofa::core::MultiVecDerivId v_id);
 
-        virtual void propagate_solution_increment(const sofa::core::MechanicalParams & mechanical_parameters,
-                                                  const sofa::core::behavior::MultiMatrixAccessor & matrix_accessor,
-                                                  const sofa::defaulttype::BaseVector * dx,
-                                                  sofa::core::MultiVecCoordId & x_id,
-                                                  sofa::core::MultiVecDerivId & v_id,
-                                                  sofa::core::MultiVecDerivId & dx_id);
+        //Wheter or not we compute the tangeant stiffness matrix and inverse it
+        Data<bool> d_solve_inversion;
+
+        // Value of the residual from the prediction state
+        Data<double> d_prediction_residual;
+
+        //Function pointer toward the corresponding way of solving. (usually "solveRasidual" during learning phase and "solveInversion" during testing/using phase)
+        void (HybridNewtonRaphson::*m_solve)(const sofa::core::ExecParams* params /* PARAMS FIRST */, double dt, sofa::core::MultiVecCoordId xResult, sofa::core::MultiVecDerivId vResult);
     };
 }

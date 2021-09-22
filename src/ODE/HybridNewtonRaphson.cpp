@@ -1,4 +1,4 @@
-#include <src/ODE/HybridNewtonRaphson.h>
+#include "HybridNewtonRaphson.h"
 
 #include <iomanip>
 #include <chrono>
@@ -7,6 +7,10 @@
 #include <SofaCaribou/Algebra/BaseVectorOperations.h>
 #include <SofaCaribou/Visitor/AssembleGlobalMatrix.h>
 #include <SofaCaribou/Visitor/ConstrainGlobalMatrix.h>
+
+#include <src/Event/PredictBeginEvent.h>
+#include <src/Event/PredictEndEvent.h>
+#include <src/Event/PredictionPickedEvent.h>
 
 DISABLE_ALL_WARNINGS_BEGIN
 #include <sofa/version.h>
@@ -21,6 +25,7 @@ DISABLE_ALL_WARNINGS_BEGIN
 namespace sofa { using Size = int; }
 #include <sofa/simulation/MechanicalMatrixVisitor.h>
 #else
+#include <sofa/simulation/PropagateEventVisitor.h>
 #include <sofa/simulation/mechanicalvisitor/MechanicalApplyConstraintsVisitor.h>
 #include <sofa/simulation/mechanicalvisitor/MechanicalComputeForceVisitor.h>
 #include <sofa/simulation/mechanicalvisitor/MechanicalMultiVectorFromBaseVectorVisitor.h>
@@ -32,22 +37,201 @@ using namespace sofa::simulation::mechanicalvisitor;
 #endif
 DISABLE_ALL_WARNINGS_END
 
-
-
-
 namespace DeepPhysicsSofa::ode {
 
-    using sofa::core::ExecParams;
-    using sofa::core::MultiVecCoordId;
-    using sofa::core::MultiVecDerivId;
-    using namespace sofa::simulation;
-    using Timer = sofa::helper::AdvancedTimer;
 
-    HybridNewtonRaphson::HybridNewtonRaphson(): NewtonRaphson()
+    HybridNewtonRaphson::HybridNewtonRaphson()
+            : d_solve_inversion(initData(&d_solve_inversion,
+                                   false,
+                                   "converged",
+                                   "Whether or not the last call to solve converged",
+                                   true /*is_displayed_in_gui*/,
+                                   true /*is_read_only*/))
     {
+        d_pattern_analysis_strategy.setValue(sofa::helper::OptionsGroup(std::vector < std::string > {
+                "NEVER", "BEGINNING_OF_THE_SIMULATION", "BEGINNING_OF_THE_TIME_STEP", "ALWAYS"
+        }));
+
+        // Select the default value
+        set_pattern_analysis_strategy(PatternAnalysisStrategy::BEGINNING_OF_THE_TIME_STEP);
     }
 
-    void HybridNewtonRaphson::solve(const ExecParams *params, SReal dt, MultiVecCoordId x_id, MultiVecDerivId v_id) {
+
+    void HybridNewtonRaphson::solve(const sofa::core::ExecParams *params, SReal dt, sofa::core::MultiVecCoordId x_id, sofa::core::MultiVecDerivId v_id)
+    {
+        m_solve = d_solve_inversion.getValue() ? &HybridNewtonRaphson::solveInversion /*TRUE*/ : &HybridNewtonRaphson::solveResidual /*FALSE*/;
+        (this->*(this->m_solve))(params,dt, x_id, v_id);
+
+    }
+    void HybridNewtonRaphson::solveResidual(const sofa::core::ExecParams *params, SReal dt, sofa::core::MultiVecCoordId x_id, sofa::core::MultiVecDerivId v_id)
+    {
+        using namespace sofa::helper::logging;
+        using namespace std::chrono;
+        using std::chrono::steady_clock;
+
+        // Make sure we have a linear solver, and that it implements the Caribou::solver::LinearSolver interface
+        static bool error_message_already_printed = false;
+        if (not has_valid_linear_solver()) {
+            if (not error_message_already_printed) {
+                msg_error() << "The system will NOT be solved.";
+                msg_error() << "No compatible linear solver have been set. Use the '"
+                            << l_linear_solver.getName()
+                            << "' attribute to specify the path towards a linear solver.";
+                error_message_already_printed = true;
+            }
+            return;
+        }
+        error_message_already_printed = false;
+
+        // Get the current context
+        const auto context = this->getContext();
+
+        // Set the multi-vector identifier inside the mechanical parameters.
+        sofa::core::MechanicalParams mechanical_parameters (*params);
+        mechanical_parameters.setX(x_id);
+        mechanical_parameters.setV(v_id);
+        mechanical_parameters.setF(sofa::core::ConstVecDerivId::force());
+        mechanical_parameters.setDf(sofa::core::ConstVecDerivId::dforce());
+        mechanical_parameters.setDx(sofa::core::ConstVecDerivId::dx());
+        mechanical_parameters.setDt(dt);
+
+        // Get the linear solver that implements the SofaCaribou::solver::LinearSolver interface
+        auto linear_solver = dynamic_cast<SofaCaribou::solver::LinearSolver *>(l_linear_solver.get());
+
+        // Create the vector and mechanical operations tools. These are used to execute special operations (multiplication,
+        // additions, etc.) on multi-vectors (a vector that is stored in different buffers inside the mechanical objects)
+        sofa::simulation::common::VectorOperations vop( &mechanical_parameters, context );
+        sofa::simulation::common::MechanicalOperations mop( &mechanical_parameters, context );
+
+        // Let the mechanical operations know that this is an implicit solver. This will be propagated back to the
+        // force fields during the addForce and addKToMatrix phase, which will let them recompute their internal
+        // stresses if they have a non-linear relationship with the displacement.
+        mop->setImplicit(false);
+        const auto & print_log = f_printLog.getValue();
+        auto info = MessageDispatcher::info(Message::Runtime, ComponentInfo::SPtr(new ComponentInfo(this->getClassName())), SOFA_FILE_INFO);
+        double R_squared_norm = 0;
+
+        // Right hand side term (internal + external forces)
+        auto f_id = sofa::core::MultiVecDerivId(sofa::core::VecDerivId::force());
+        vop.v_clear(f_id);
+
+        // Incremental displacement of one iteration (not allocated by default by the mechanical objects, unlike x, v, f and df)
+        auto dx_id = sofa::core::MultiVecDerivId(sofa::core::VecDerivId::dx());
+        vop.v_realloc(dx_id, false /* interactionForceField */, false /* propagate [to mapped MO] */);
+        vop.v_clear(dx_id);
+
+
+        if (print_log) {
+            info << "======= Starting static ODE solver =======\n";
+            info << "Time step                : " << this->getTime() << "\n";
+            info << "Context                  : " << dynamic_cast<const sofa::simulation::Node *>(context)->getPathName() << "\n";
+            info << "Max iterations           : " << 0 << "\n";
+            info << "Residual tolerance (abs) : " << 0 << "\n";
+            info << "Residual tolerance (rel) : " << 0 << "\n";
+            info << "Correction tolerance     : " << 0 << "\n";
+            info << "Linear solver            : " << "None" << "\n\n";
+        }
+
+        // Local variables used for the iterations
+
+        // Resize vectors containing the newton residual norms
+        p_squared_residuals.clear();
+        p_squared_residuals.reserve(2);
+
+        // Resize vectors containing the times took to compute the newton iterations
+        p_times.clear();
+
+        // Start the advanced timer
+        sofa::helper::ScopedAdvancedTimer timer (this->getClassName() + "::Solve");
+
+        // ###########################################################################
+        // #                           Mechanical graph                              #
+        // ###########################################################################
+        // # Construct the mechanical graph by finding top level mechanical objects, #
+        // # mechanical mapping, and mapped mechanical objects. This graph will be   #
+        // # used to compute the final assembled system matrix.                      #
+        // ###########################################################################
+
+        // For now, let the "default" multi-matrix accessor go down the scene graph and
+        // accumulate the mechanical objects and mappings. This one will not really
+        // compute the mechanical graph (not explicitly at least). Hence the following
+        sofa::component::linearsolver::DefaultMultiMatrixAccessor accessor;
+
+        // Step 1   Get dimension of each top level mechanical states using
+        //          BaseMechanicalState::getMatrixSize(), and accumulate mechanical
+        //          objects and mapping matrices
+        mop.getMatrixDimension(nullptr, nullptr, &accessor);
+        const auto n = static_cast<sofa::Size>(accessor.getGlobalDimension());
+
+        // Step 3   Let the linear solver create the system matrix and vector buffers
+        //          using the previously computed system size n
+        p_DX.reset(linear_solver->create_new_vector(n));
+        p_DX->clear();
+
+        p_F.reset(linear_solver->create_new_vector(n));
+        p_F->clear();
+
+
+        // ###########################################################################
+        // #                             First residual                              #
+        // ###########################################################################
+        // # Before starting any newton iterations, we first need to compute         #
+        // # the residual with the updated right-hand side (the new load increment)  #
+        // ###########################################################################
+
+        // Step 1   Assemble the force vector
+        sofa::helper::AdvancedTimer::stepBegin("ComputeForce");
+        this->assemble_rhs_vector(mechanical_parameters, accessor, f_id, p_F.get());
+        sofa::helper::AdvancedTimer::stepEnd("ComputeForce");
+
+        // Step 2   Compute the initial residual
+        R_squared_norm = SofaCaribou::Algebra::dot(p_F.get(), p_F.get());
+        p_squared_initial_residual = R_squared_norm;
+        p_squared_residuals.emplace_back(R_squared_norm);
+
+        // If working with rest shapes, initial residual only contains external forces
+        // We now call predictBeginEvent in order to catch the external forces
+        PredictBeginEvent PBev ( this->getContext()->getRootContext()->getDt (), 0 );
+        sofa::simulation::PropagateEventVisitor pTBev ( params, &PBev );
+        this->getContext()->getRootContext()->executeVisitor(&pTBev );
+
+        // Step 3   Propagating the prediction and update geometry.
+        sofa::helper::ScopedAdvancedTimer _t_("PropagateDx");
+        this->propagate_solution_increment(mechanical_parameters, accessor, p_DX.get(), x_id, v_id, dx_id);
+
+
+
+        // ###########################################################################
+        // #                            Second residual                              #
+        // ###########################################################################
+        // # Before starting any newton iterations, we first need to compute         #
+        // # the residual with the updated right-hand side (the new load increment)  #
+        // ###########################################################################
+        // Step 4   Update the force vector with object deformed by the neural network
+        sofa::helper::AdvancedTimer::stepBegin("UpdateForce");
+        p_F->clear();
+        this->assemble_rhs_vector(mechanical_parameters, accessor, f_id, p_F.get());
+        sofa::helper::AdvancedTimer::stepEnd("UpdateForce");
+
+        // Step 5   Compute the updated force residual.
+        sofa::helper::AdvancedTimer::stepBegin("UpdateResidual");
+        R_squared_norm = SofaCaribou::Algebra::dot(p_F.get(), p_F.get());
+        sofa::helper::AdvancedTimer::stepEnd("UpdateResidual");
+        p_squared_residuals.emplace_back(R_squared_norm);
+
+        // If working with rest shapes, initial residual only contains external forces
+        // We now call predictBeginEvent in order to catch the external forces
+        PredictEndEvent PEev ( this->getContext()->getRootContext()->getDt (), 0 );
+        sofa::simulation::PropagateEventVisitor pTPEev ( params, &PEev );
+        this->getContext()->getRootContext()->executeVisitor(&pTPEev );
+
+        d_converged.setValue(true);
+        sofa::helper::AdvancedTimer::valSet("has_converged", true);
+        sofa::helper::AdvancedTimer::valSet("nb_iterations", 0);
+    }
+
+    void HybridNewtonRaphson::solveInversion(const sofa::core::ExecParams *params, SReal dt, sofa::core::MultiVecCoordId x_id, sofa::core::MultiVecDerivId v_id)
+    {
         using namespace sofa::helper::logging;
         using namespace std::chrono;
         using std::chrono::steady_clock;
@@ -163,7 +347,6 @@ namespace DeepPhysicsSofa::ode {
         // For now, let the "default" multi-matrix accessor go down the scene graph and
         // accumulate the mechanical objects and mappings. This one will not really
         // compute the mechanical graph (not explicitly at least). Hence the following
-        // @todo (jnbrunet2000@gmail.com) Create a CaribouMultiMatrixAccessor for that.
         sofa::component::linearsolver::DefaultMultiMatrixAccessor accessor;
 
         // Step 1   Get dimension of each top level mechanical states using
@@ -206,6 +389,45 @@ namespace DeepPhysicsSofa::ode {
         // Step 2   Compute the initial residual
         R_squared_norm = SofaCaribou::Algebra::dot(p_F.get(), p_F.get());
         p_squared_initial_residual = R_squared_norm;
+
+        // If working with rest shapes, initial residual only contains external forces
+        // We now call predictBeginEvent in order to catch the external forces
+        PredictBeginEvent PBev ( this->getContext()->getRootContext()->getDt (), 0 );
+        sofa::simulation::PropagateEventVisitor pTBev ( params, &PBev );
+        this->getContext()->getRootContext()->executeVisitor(&pTBev );
+
+        // Step 3   Propagating the prediction and update geometry.
+        sofa::helper::ScopedAdvancedTimer _t_("PropagateDx");
+        this->propagate_solution_increment(mechanical_parameters, accessor, p_DX.get(), x_id, v_id, dx_id);
+
+
+
+        // ###########################################################################
+        // #                            Second residual                              #
+        // ###########################################################################
+        // # Before starting any newton iterations, we first need to compute         #
+        // # the residual with the updated right-hand side (the new load increment)  #
+        // ###########################################################################
+        // Step 4   Update the force vector with object deformed by the neural network
+        sofa::helper::AdvancedTimer::stepBegin("UpdateForce");
+        p_F->clear();
+        this->assemble_rhs_vector(mechanical_parameters, accessor, f_id, p_F.get());
+        sofa::helper::AdvancedTimer::stepEnd("UpdateForce");
+
+        // Step 5   Compute the updated force residual.
+        sofa::helper::AdvancedTimer::stepBegin("UpdateResidual");
+        R_squared_norm = SofaCaribou::Algebra::dot(p_F.get(), p_F.get());
+        d_prediction_residual.setValue(R_squared_norm);
+        sofa::helper::AdvancedTimer::stepEnd("UpdateResidual");
+
+        // If working with rest shapes, initial residual only contains external forces
+        // We now call predictBeginEvent in order to catch the external forces
+        PredictEndEvent PEev ( this->getContext()->getRootContext()->getDt (), 0 );
+        sofa::simulation::PropagateEventVisitor pTPEev ( params, &PEev );
+        this->getContext()->getRootContext()->executeVisitor(&pTPEev );
+
+        // Reset position to the rest shape
+        MechanicalVOpVisitor(&mechanical_parameters, x_id, sofa::core::ConstVecCoordId::restPosition()).execute(this->getContext());
 
         if (absolute_residual_tolerance_threshold > 0 && R_squared_norm <= squared_absolute_residual_tolerance_threshold) {
             converged = true;
@@ -299,6 +521,30 @@ namespace DeepPhysicsSofa::ode {
                 sofa::helper::AdvancedTimer::stepEnd("UpdateResidual");
             }
 
+            if(n_it == 0 and R_squared_norm > d_prediction_residual.getValue()){
+                // The neural network prediction is better than the first iteration
+                // The new model position are updated with the predicted ones.
+                PredictionPickedEvent PPev ( this->getContext()->getRootContext()->getDt (), 0 );
+                sofa::simulation::PropagateEventVisitor pPPev ( params, &PPev );
+                this->getContext()->getRootContext()->executeVisitor(&pPPev );
+
+                // update of the residual
+                R_squared_norm = d_prediction_residual.getValue();
+
+                // Calls "solveConstraint" method of every ConstraintSolver objects found in the current context tree.
+                sofa::core::ConstraintParams constraint_parameters = mechanical_parameters;
+                constraint_parameters.setOrder(sofa::core::ConstraintParams::POS);
+
+                using Direction = sofa::core::objectmodel::BaseContext::SearchDirection;
+                auto constraint_solvers = this->getContext()->getObjects<sofa::core::behavior::ConstraintSolver>(Direction::Local);
+                for (auto * solver : constraint_solvers) {
+                    solver->solveConstraint(&constraint_parameters, x_id);
+                }
+
+                // 4. Propagate positions to mapped mechanical objects, for example, identity mappings, barycentric mappings, etc.
+                //    This will call the methods apply and applyJ on every mechanical mappings.
+                MechanicalPropagateOnlyPositionAndVelocityVisitor(&mechanical_parameters).execute(this->getContext());
+            }
             // Part 8. Compute the updated displacement residual.
             sofa::helper::AdvancedTimer::stepBegin("UpdateU");
             vop.v_peq(p_U_id, dx_id); // U += dx
@@ -393,103 +639,6 @@ namespace DeepPhysicsSofa::ode {
         sofa::helper::AdvancedTimer::valSet("nb_iterations", n_it+1);
     }
 
+    int HybridNewtonRaphsonClass = sofa::core::RegisterObject("HybridNewtonRaphson").add< HybridNewtonRaphson >();
 
-/**
- Copy pasted from https://github.com/jnbrunet/caribou/blob/master/src/SofaCaribou/Ode/StaticODESolver.cpp
- */
-// Assemble F in A [dx] = F
-    void HybridNewtonRaphson::assemble_rhs_vector(const sofa::core::MechanicalParams &mechanical_parameters,
-                                              const sofa::core::behavior::MultiMatrixAccessor & matrix_accessor,
-                                              sofa::core::MultiVecDerivId & f_id,
-                                              sofa::defaulttype::BaseVector *f) {
-        // 1. Clear the force vector (F := 0)
-        MechanicalResetForceVisitor(&mechanical_parameters, f_id,
-                                    false /* onlyMapped */)
-                .execute(this->getContext());
-
-        // 2. Go down in the current context tree calling `addForce` on every force field components,
-        //    then go up from the leaves calling `applyJT` on every mechanical mappings
-        MechanicalComputeForceVisitor(&mechanical_parameters, f_id,
-                                      true /* accumulate (to mapped node) */, true /*neglectingCompliance*/)
-                .execute(this->getContext());
-
-        // 3. Calls the "projectResponse" method of every `BaseProjectiveConstraintSet` objects found in the current
-        //    context tree. For example, the `FixedConstraints` component will set entries of fixed nodes to zero.
-        MechanicalApplyConstraintsVisitor(&mechanical_parameters, f_id,
-                                          nullptr /*W (also project the given compliance matrix) */)
-                .execute(this->getContext());
-
-        // 4. Copy force vectors from every top level (unmapped) mechanical objects into the given system vector f
-        MechanicalMultiVectorToBaseVectorVisitor(&mechanical_parameters, f_id /* source */, f /* destination */, &matrix_accessor)
-                .execute(this->getContext());
-    }
-
-// Assemble A in A [dx] = F
-    void HybridNewtonRaphson::assemble_system_matrix(const sofa::core::MechanicalParams &mechanical_parameters,
-                                                 sofa::component::linearsolver::DefaultMultiMatrixAccessor & matrix_accessor,
-                                                 sofa::defaulttype::BaseMatrix *A) {
-        // Step 1. Building stage:
-        //         Here we go down on the current context sub-graph and call :
-        //           1. ff->addMBKToMatrix(&K) for every force field "ff" found.
-        //           2. pc->applyConstraint(&K) for every BaseProjectiveConstraintSet "pc" found.
-        //         If a mechanical mapping "m" is found during the traversal, and m->areMatricesMapped() is false, the
-        //         traversal stops in the subgraph of the mapping.
-        matrix_accessor.setGlobalMatrix(A);
-        sofa::core::MechanicalParams m_params (mechanical_parameters);
-        m_params.setKFactor(-1.0);
-        Timer::stepBegin("AssembleGlobalMatrix");
-        SofaCaribou::visitor::AssembleGlobalMatrix(&m_params, &matrix_accessor).execute(this->getContext());
-        Timer::stepEnd("AssembleGlobalMatrix");
-
-        Timer::stepBegin("ConstrainGlobalMatrix");
-        SofaCaribou::visitor::ConstrainGlobalMatrix(&m_params, &matrix_accessor).execute(this->getContext());
-        Timer::stepEnd("ConstrainGlobalMatrix");
-
-        // Step 2. Mechanical mappings
-        //         In case we have mapped matrices, which is, system matrix of a slave mechanical object, accumulate its
-        //         contribution to the global system matrix with:
-        //           [A]ij += Jt * [A']ij * J
-        //         where A is the master mechanical object's matrix, A' is the slave mechanical object matrix and J=m.getJ()
-        //         is the mapping relation between the slave and its master.
-        Timer::stepBegin("MappedMatrices");
-        matrix_accessor.computeGlobalMatrix();
-        Timer::stepEnd("MappedMatrices");
-
-        // Step 3. Convert the system matrix to a compressed sparse matrix
-        Timer::stepBegin("ConvertToSparse");
-        A->compress();
-        Timer::stepEnd("ConvertToSparse");
-
-    }
-
-// Propagate Dx that was previously solved in A [dx] = F
-    void HybridNewtonRaphson::propagate_solution_increment(const sofa::core::MechanicalParams &mechanical_parameters,
-                                                       const sofa::core::behavior::MultiMatrixAccessor & matrix_accessor,
-                                                       const sofa::defaulttype::BaseVector * dx,
-                                                       sofa::core::MultiVecCoordId & x_id,
-                                                       sofa::core::MultiVecDerivId & /* v_id */,
-                                                       sofa::core::MultiVecDerivId & dx_id) {
-
-        // 1. Copy vectors from the global system vector into every top level (unmapped) mechanical objects.
-        MechanicalMultiVectorFromBaseVectorVisitor(&mechanical_parameters, dx_id, dx, &matrix_accessor).execute(this->getContext());
-
-        // 2. x += dx
-        MechanicalVOpVisitor(&mechanical_parameters, x_id, x_id, dx_id).execute(this->getContext());
-
-        // 3. Calls "solveConstraint" method of every ConstraintSolver objects found in the current context tree.
-        sofa::core::ConstraintParams constraint_parameters = mechanical_parameters;
-        constraint_parameters.setOrder(sofa::core::ConstraintParams::POS);
-
-        using Direction = sofa::core::objectmodel::BaseContext::SearchDirection;
-        auto constraint_solvers = this->getContext()->getObjects<sofa::core::behavior::ConstraintSolver>(Direction::Local);
-        for (auto * solver : constraint_solvers) {
-            solver->solveConstraint(&constraint_parameters, x_id);
-        }
-
-        // 4. Propagate positions to mapped mechanical objects, for example, identity mappings, barycentric mappings, etc.
-        //    This will call the methods apply and applyJ on every mechanical mappings.
-        MechanicalPropagateOnlyPositionAndVelocityVisitor(&mechanical_parameters).execute(this->getContext());
-    }
-
-    int HybridNewtonRaphsonClass = sofa::core::RegisterObject("Hybrid Newton Raphson").add< HybridNewtonRaphson >();
-} // namespace DeepPhysicsSofa::ode
+}
