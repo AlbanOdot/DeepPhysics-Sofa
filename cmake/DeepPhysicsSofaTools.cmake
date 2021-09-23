@@ -1,5 +1,6 @@
 
 #Copy pasted from https://github.com/jnbrunet/caribou/tree/master/cmake
+
 function(dump_cmake_variables)
     get_cmake_property(_variableNames VARIABLES)
     list (SORT _variableNames)

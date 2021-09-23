@@ -5,7 +5,7 @@ set(HEADER_FILES
         ODE/ODEInterface.h
         ODE/NewtonRaphson.h
         ODE/HybridNewtonRaphson.h
-        Solver/LDLTSolver.h
+        #Solver/LDLTSolver.h
         )
 
 set(SOURCE_FILES
@@ -15,7 +15,7 @@ set(SOURCE_FILES
         ODE/ODEInterface.cpp
         ODE/NewtonRaphson.cpp
         ODE/HybridNewtonRaphson.cpp
-        Solver/LDLTSolver.cpp
+        #Solver/LDLTSolver.cpp
         )
 
 # Caribou
@@ -80,7 +80,6 @@ DeepPhysicsSofa_add_target_to_component (
 )
 
 find_package(SofaPython3 QUIET)
-add_subdirectory(Python)
 
 install (
         EXPORT DeepPhysicsSofaTargets
