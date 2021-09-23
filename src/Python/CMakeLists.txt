@@ -15,11 +15,11 @@ set(PYTHON_FILES
 
 
 find_package(SofaPython3 REQUIRED)
-
+find_package(SofaCaribou REQUIRED)
 DeepPhysicsSofa_add_python_module(DeepPhysicsSofa
         TARGET_NAME       ${PROJECT_NAME}
         TARGET_ALIAS      DeepPhysicsSofa::Python.DeepPhysicsSofa
-        TARGET_DEPENDS    DeepPhysicsSofa SofaCaribou SofaPython3::Bindings.Sofa.Core
+        TARGET_DEPENDS    DeepPhysicsSofa SofaPython3::Bindings.Sofa.Core SofaCaribou
         COMPONENT_NAME    DeepPhysicsSofa
         PACKAGE_NAME      DeepPhysicsSofa
         DESTINATION       DeepPhysicsSofa

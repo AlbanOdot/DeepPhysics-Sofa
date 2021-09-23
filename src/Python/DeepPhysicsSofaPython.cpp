@@ -2,7 +2,6 @@
 
 #include <src/Python/Solver/LDLTSolver.h>
 
-#include <vector>
 #include <pybind11/stl_bind.h>
 
 PYBIND11_MODULE(SofaCaribou, m) {

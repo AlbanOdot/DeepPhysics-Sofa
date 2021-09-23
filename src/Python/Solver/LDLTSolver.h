@@ -14,8 +14,8 @@ namespace DeepPhysicsSofa::solver::python {
     template <typename EigenSolver_t>
     void bind_LDLTSolver(pybind11::module & m) {
         namespace py = pybind11;
-        using SOLVER = LDLTSolver<EigenSolver_t>;
-        py::class_<SOLVER, sofa::core::objectmodel::BaseObject, sofapython3::py_shared_ptr<SOLVER>> c(m, "LDLTSolver");
+        using SOLVER = DeepPhysicsSofa::solver::LDLTSolver<EigenSolver_t>;
+        py::class_<SOLVER, sofa::core::objectmodel::BaseObject, sofapython3::py_shared_ptr<SOLVER>> c(m, "DPSLDLTSolver");
 
         c.def("A", &SOLVER::A);
         c.def("eigen_values", &SOLVER::eigen_values);

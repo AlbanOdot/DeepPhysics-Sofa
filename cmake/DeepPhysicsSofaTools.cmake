@@ -153,7 +153,7 @@ function(DeepPhysicsSofa_add_python_module NAME)
             endif()
         endif()
 
-        target_link_libraries(${TARGET_NAME} PUBLIC ${TARGET_DEPENDS} -ldl)
+        target_link_libraries(${TARGET_NAME} PUBLIC ${TARGET_DEPENDS})
 
         if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
             target_compile_options(${TARGET_NAME} PRIVATE -fsized-deallocation)

@@ -41,10 +41,10 @@ namespace DeepPhysicsSofa::solver {
 
 
     static int DPSSparseLDLTSolverClass = sofa::core::RegisterObject("DeepPhysicsSofa Sparse LDLT linear solver")
-                                               .add< LDLTSolver<Eigen::SimplicialLDLT<Eigen::SparseMatrix<FLOATING_POINT_TYPE, Eigen::ColMajor, int>, Eigen::Lower, Eigen::AMDOrdering<int>>> >(true)
-#ifdef DeepPhysicsSofa_WITH_MKL
-    .add< LDLTSolver<Eigen::PardisoLDLT<Eigen::SparseMatrix<FLOATING_POINT_TYPE, Eigen::RowMajor, int>>> >()
-#endif
+                                                .add< LDLTSolver<Eigen::SimplicialLDLT<Eigen::SparseMatrix<FLOATING_POINT_TYPE, Eigen::ColMajor, int>, Eigen::Lower, Eigen::AMDOrdering<int>>> >(true)
+                                               #ifdef DeepPhysicsSofa_WITH_MKL
+                                                .add< LDLTSolver<Eigen::PardisoLDLT<Eigen::SparseMatrix<FLOATING_POINT_TYPE, Eigen::RowMajor, int>>> >()
+                                                    #endif
     ;
 
 } // namespace DeepPhysicsSofa::solver
