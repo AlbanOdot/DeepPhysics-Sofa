@@ -31,5 +31,4 @@ Install the libraries in the given order.
 Once project is compiled and installed run from build folder :
 ```bash
 export DeepPhysicsSofa_ROOT="$(pwd)/install"
-ln -sFfv $(find $DeepPhysicsSofa_ROOT/lib/python3/site-packages -maxdepth 1 -mindepth 1) $(python3 -m site --user-site)
 ```
