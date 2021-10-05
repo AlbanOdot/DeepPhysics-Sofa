@@ -38,16 +38,16 @@ using namespace sofa::simulation::mechanicalvisitor;
 DISABLE_ALL_WARNINGS_END
 
 namespace DeepPhysicsSofa::ode {
-
-
-    HybridNewtonRaphson::HybridNewtonRaphson()
-            : d_solve_inversion(initData(&d_solve_inversion,
-                                   false,
-                                   "converged",
-                                   "Whether or not the last call to solve converged",
-                                   true /*is_displayed_in_gui*/,
-                                   true /*is_read_only*/))
-    {
+    HybridNewtonRaphson::HybridNewtonRaphson() : d_solve_inversion(initData(&d_solve_inversion,
+                                                                            true,
+                                                                            "solve_with_inversion",
+                                                                            "Whether or not the last call to solve converged",
+                                                                            true /*is_displayed_in_gui*/,
+                                                                            true /*is_read_only*/)),
+                                                 d_prediction_residual(initData(&d_prediction_residual,
+                                                                                (double) 1e-5,
+                                                                                "prediction_residual",
+                                                                                "Residual computed after the PredictBeginEvent and before the PredictEndEvent")) {
         d_pattern_analysis_strategy.setValue(sofa::helper::OptionsGroup(std::vector < std::string > {
                 "NEVER", "BEGINNING_OF_THE_SIMULATION", "BEGINNING_OF_THE_TIME_STEP", "ALWAYS"
         }));
@@ -56,15 +56,17 @@ namespace DeepPhysicsSofa::ode {
         set_pattern_analysis_strategy(PatternAnalysisStrategy::BEGINNING_OF_THE_TIME_STEP);
     }
 
-
-    void HybridNewtonRaphson::solve(const sofa::core::ExecParams *params, SReal dt, sofa::core::MultiVecCoordId x_id, sofa::core::MultiVecDerivId v_id)
-    {
-        m_solve = d_solve_inversion.getValue() ? &HybridNewtonRaphson::solveInversion /*TRUE*/ : &HybridNewtonRaphson::solveResidual /*FALSE*/;
-        (this->*(this->m_solve))(params,dt, x_id, v_id);
+    void HybridNewtonRaphson::solve(const sofa::core::ExecParams *params, SReal dt, sofa::core::MultiVecCoordId x_id,
+                                    sofa::core::MultiVecDerivId v_id) {
+        m_solve = d_solve_inversion.getValue() ? &HybridNewtonRaphson::solveInversion /*TRUE*/
+                                               : &HybridNewtonRaphson::solveResidual /*FALSE*/;
+        (this->*(this->m_solve))(params, dt, x_id, v_id);
 
     }
-    void HybridNewtonRaphson::solveResidual(const sofa::core::ExecParams *params, SReal dt, sofa::core::MultiVecCoordId x_id, sofa::core::MultiVecDerivId v_id)
-    {
+
+    void
+    HybridNewtonRaphson::solveResidual(const sofa::core::ExecParams *params, SReal dt, sofa::core::MultiVecCoordId x_id,
+                                       sofa::core::MultiVecDerivId v_id) {
         using namespace sofa::helper::logging;
         using namespace std::chrono;
         using std::chrono::steady_clock;
@@ -191,7 +193,7 @@ namespace DeepPhysicsSofa::ode {
 
         // If working with rest shapes, initial residual only contains external forces
         // We now call predictBeginEvent in order to catch the external forces
-        PredictBeginEvent PBev ( this->getContext()->getRootContext()->getDt (), 0 );
+        PredictBeginEvent PBev ( this->getContext()->getRootContext()->getDt (), -1 );
         sofa::simulation::PropagateEventVisitor pTBev ( params, &PBev );
         this->getContext()->getRootContext()->executeVisitor(&pTBev );
 
@@ -221,7 +223,7 @@ namespace DeepPhysicsSofa::ode {
 
         // If working with rest shapes, initial residual only contains external forces
         // We now call predictBeginEvent in order to catch the external forces
-        PredictEndEvent PEev ( this->getContext()->getRootContext()->getDt (), 0 );
+        PredictEndEvent PEev ( this->getContext()->getRootContext()->getDt (), -1);
         sofa::simulation::PropagateEventVisitor pTPEev ( params, &PEev );
         this->getContext()->getRootContext()->executeVisitor(&pTPEev );
 
@@ -230,8 +232,8 @@ namespace DeepPhysicsSofa::ode {
         sofa::helper::AdvancedTimer::valSet("nb_iterations", 0);
     }
 
-    void HybridNewtonRaphson::solveInversion(const sofa::core::ExecParams *params, SReal dt, sofa::core::MultiVecCoordId x_id, sofa::core::MultiVecDerivId v_id)
-    {
+    void HybridNewtonRaphson::solveInversion(const sofa::core::ExecParams *params, SReal dt,
+                                             sofa::core::MultiVecCoordId x_id, sofa::core::MultiVecDerivId v_id) {
         using namespace sofa::helper::logging;
         using namespace std::chrono;
         using std::chrono::steady_clock;
@@ -306,7 +308,7 @@ namespace DeepPhysicsSofa::ode {
         mop->setImplicit(true);
 
         if (print_log) {
-            info << "======= Starting static ODE solver =======\n";
+            info << "======= Starting hybrid Newton-Raphson solver =======\n";
             info << "Time step                : " << this->getTime() << "\n";
             info << "Context                  : " << dynamic_cast<const sofa::simulation::Node *>(context)->getPathName() << "\n";
             info << "Max iterations           : " << newton_iterations << "\n";
@@ -347,6 +349,7 @@ namespace DeepPhysicsSofa::ode {
         // For now, let the "default" multi-matrix accessor go down the scene graph and
         // accumulate the mechanical objects and mappings. This one will not really
         // compute the mechanical graph (not explicitly at least). Hence the following
+        // @todo (jnbrunet2000@gmail.com) Create a CaribouMultiMatrixAccessor for that.
         sofa::component::linearsolver::DefaultMultiMatrixAccessor accessor;
 
         // Step 1   Get dimension of each top level mechanical states using
@@ -373,6 +376,8 @@ namespace DeepPhysicsSofa::ode {
         p_F.reset(linear_solver->create_new_vector(n));
         p_F->clear();
 
+        p_F_prediction.reset(linear_solver->create_new_vector(n));
+        p_F_prediction->clear();
 
         // ###########################################################################
         // #                             First residual                              #
@@ -390,41 +395,36 @@ namespace DeepPhysicsSofa::ode {
         R_squared_norm = SofaCaribou::Algebra::dot(p_F.get(), p_F.get());
         p_squared_initial_residual = R_squared_norm;
 
-        // If working with rest shapes, initial residual only contains external forces
-        // We now call predictBeginEvent in order to catch the external forces
-        PredictBeginEvent PBev ( this->getContext()->getRootContext()->getDt (), 0 );
-        sofa::simulation::PropagateEventVisitor pTBev ( params, &PBev );
-        this->getContext()->getRootContext()->executeVisitor(&pTBev );
-
-        // Step 3   Propagating the prediction and update geometry.
-        sofa::helper::ScopedAdvancedTimer _t_("PropagateDx");
-        this->propagate_solution_increment(mechanical_parameters, accessor, p_DX.get(), x_id, v_id, dx_id);
-
-
 
         // ###########################################################################
-        // #                            Second residual                              #
+        // #                        Neural network evaluation                        #
         // ###########################################################################
         // # Before starting any newton iterations, we first need to compute         #
         // # the residual with the updated right-hand side (the new load increment)  #
         // ###########################################################################
-        // Step 4   Update the force vector with object deformed by the neural network
+
+        // If working with rest shapes, initial residual only contains external forces
+        // We now call predictBeginEvent in order to catch the external forces
+        PredictBeginEvent PBev ( this->getContext()->getRootContext()->getDt (), -1 );
+        sofa::simulation::PropagateEventVisitor pTBev ( params, &PBev );
+        this->getContext()->getRootContext()->executeVisitor(&pTBev );
+
         sofa::helper::AdvancedTimer::stepBegin("UpdateForce");
-        p_F->clear();
-        this->assemble_rhs_vector(mechanical_parameters, accessor, f_id, p_F.get());
+        this->assemble_rhs_vector(mechanical_parameters, accessor, f_id, p_F_prediction.get());
         sofa::helper::AdvancedTimer::stepEnd("UpdateForce");
 
         // Step 5   Compute the updated force residual.
         sofa::helper::AdvancedTimer::stepBegin("UpdateResidual");
-        R_squared_norm = SofaCaribou::Algebra::dot(p_F.get(), p_F.get());
+        R_squared_norm = SofaCaribou::Algebra::dot(p_F_prediction.get(), p_F_prediction.get());
         d_prediction_residual.setValue(R_squared_norm);
         sofa::helper::AdvancedTimer::stepEnd("UpdateResidual");
 
         // If working with rest shapes, initial residual only contains external forces
         // We now call predictBeginEvent in order to catch the external forces
-        PredictEndEvent PEev ( this->getContext()->getRootContext()->getDt (), 0 );
+        PredictEndEvent PEev ( this->getContext()->getRootContext()->getDt (), -1 );
         sofa::simulation::PropagateEventVisitor pTPEev ( params, &PEev );
         this->getContext()->getRootContext()->executeVisitor(&pTPEev );
+
 
         // Reset position to the rest shape
         MechanicalVOpVisitor(&mechanical_parameters, x_id, sofa::core::ConstVecCoordId::restPosition()).execute(this->getContext());
@@ -521,30 +521,6 @@ namespace DeepPhysicsSofa::ode {
                 sofa::helper::AdvancedTimer::stepEnd("UpdateResidual");
             }
 
-            if(n_it == 0 and R_squared_norm > d_prediction_residual.getValue()){
-                // The neural network prediction is better than the first iteration
-                // The new model position are updated with the predicted ones.
-                PredictionPickedEvent PPev ( this->getContext()->getRootContext()->getDt (), 0 );
-                sofa::simulation::PropagateEventVisitor pPPev ( params, &PPev );
-                this->getContext()->getRootContext()->executeVisitor(&pPPev );
-
-                // update of the residual
-                R_squared_norm = d_prediction_residual.getValue();
-
-                // Calls "solveConstraint" method of every ConstraintSolver objects found in the current context tree.
-                sofa::core::ConstraintParams constraint_parameters = mechanical_parameters;
-                constraint_parameters.setOrder(sofa::core::ConstraintParams::POS);
-
-                using Direction = sofa::core::objectmodel::BaseContext::SearchDirection;
-                auto constraint_solvers = this->getContext()->getObjects<sofa::core::behavior::ConstraintSolver>(Direction::Local);
-                for (auto * solver : constraint_solvers) {
-                    solver->solveConstraint(&constraint_parameters, x_id);
-                }
-
-                // 4. Propagate positions to mapped mechanical objects, for example, identity mappings, barycentric mappings, etc.
-                //    This will call the methods apply and applyJ on every mechanical mappings.
-                MechanicalPropagateOnlyPositionAndVelocityVisitor(&mechanical_parameters).execute(this->getContext());
-            }
             // Part 8. Compute the updated displacement residual.
             sofa::helper::AdvancedTimer::stepBegin("UpdateU");
             vop.v_peq(p_U_id, dx_id); // U += dx
@@ -639,6 +615,6 @@ namespace DeepPhysicsSofa::ode {
         sofa::helper::AdvancedTimer::valSet("nb_iterations", n_it+1);
     }
 
-    int HybridNewtonRaphsonClass = sofa::core::RegisterObject("HybridNewtonRaphson").add< HybridNewtonRaphson >();
+    int HybridNewtonRaphsonClass = sofa::core::RegisterObject("Hybrid Newton-Raphson Solver").add< HybridNewtonRaphson >();
 
 }
