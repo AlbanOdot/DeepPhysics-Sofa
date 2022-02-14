@@ -31,7 +31,7 @@ namespace DeepPhysicsSofa::forcefield {
             msg_info() << "Topology path used: '" << this->l_topology.getLinkedPath() << "'";
 
             // Initialize functions and parameters for topology data and handler
-            this->d_indices.registerTopologicalData();
+            this->d_indices.createTopologyHandler(_topology);
 
             m_systemSize = _topology->getNbPoints();
         }

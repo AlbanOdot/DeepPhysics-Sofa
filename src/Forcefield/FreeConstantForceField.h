@@ -1,6 +1,7 @@
 #pragma once
 
 #include <SofaBoundaryCondition/ConstantForceField.h>
+#include <sofa/core/topology/TopologySubsetIndices.h>
 namespace DeepPhysicsSofa::forcefield {
 
 
@@ -18,7 +19,7 @@ namespace DeepPhysicsSofa::forcefield {
         typedef sofa::core::objectmodel::Data<VecCoord> DataVecCoord;
         typedef sofa::core::objectmodel::Data<VecDeriv> DataVecDeriv;
 
-        typedef sofa::component::topology::PointSubsetData< VecIndex > SetIndex;
+        typedef sofa::core::topology::TopologySubsetIndices SetIndex;
     public:
 
         /// Init function
