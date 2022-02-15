@@ -148,12 +148,12 @@ namespace DeepPhysicsSofa::ode {
         this->getContext()->getRootContext()->executeVisitor(&pTBev );
 
         sofa::helper::AdvancedTimer::stepBegin("UpdateForce");
-        this->assemble_rhs_vector(mechanical_parameters, accessor, f_id, p_F_prediction.get());
+        this->assemble_rhs_vector(mechanical_parameters, accessor, f_id, p_F.get());
         sofa::helper::AdvancedTimer::stepEnd("UpdateForce");
 
         // Step 5   Compute the updated force residual.
         sofa::helper::AdvancedTimer::stepBegin("UpdateResidual");
-        d_prediction_residual.setValue(SofaCaribou::Algebra::dot(p_F_prediction.get(), p_F_prediction.get()));
+        d_prediction_residual.setValue(SofaCaribou::Algebra::dot(p_F.get(), p_F.get()));
         sofa::helper::AdvancedTimer::stepEnd("UpdateResidual");
 
         // If working with rest shapes, initial residual only contains external forces
@@ -161,6 +161,10 @@ namespace DeepPhysicsSofa::ode {
         PredictEndEvent PEev ( this->getContext()->getRootContext()->getDt (), -1 );
         sofa::simulation::PropagateEventVisitor pTPEev ( params, &PEev );
         this->getContext()->getRootContext()->executeVisitor(&pTPEev );
+
+        p_A->clear();
+        p_DX->clear();
+        p_F->clear();
     }
 
     void HybridNewtonRaphson::solve(const sofa::core::ExecParams *params, SReal dt,
@@ -268,7 +272,6 @@ namespace DeepPhysicsSofa::ode {
         // # Before starting any newton iterations, we first need to compute         #
         // # the residual with the updated right-hand side (the new load increment)  #
         // ###########################################################################
-        this->clearSimulationData(vop, mop, f_id, dx_id, accessor, linear_solver, newton_iterations);
         // Step 1   Assemble the force vector
         sofa::helper::AdvancedTimer::stepBegin("ComputeForce");
         this->assemble_rhs_vector(mechanical_parameters, accessor, f_id, p_F.get());

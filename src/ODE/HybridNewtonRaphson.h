@@ -34,7 +34,7 @@ namespace ode {
                              sofa::core::MultiVecDerivId& f_id,
                              sofa::core::MultiVecDerivId& dx_id,
                              sofa::component::linearsolver::DefaultMultiMatrixAccessor& accessor,
-                                 SofaCaribou::solver::LinearSolver * linear_solver,
+                             SofaCaribou::solver::LinearSolver * linear_solver,
                              int newton_iterations);
 
         //Wheter or not we compute the tangeant stiffness matrix and inverse it
@@ -45,9 +45,6 @@ namespace ode {
 
         // Value of the residual from the prediction state
         Data<double> d_prediction_residual;
-
-        // Global system RHS vector (the forces)
-        std::unique_ptr <sofa::defaulttype::BaseVector> p_F_prediction;
 
     };
 } //ode
