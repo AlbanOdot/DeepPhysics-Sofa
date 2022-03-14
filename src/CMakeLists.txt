@@ -4,6 +4,8 @@ set(HEADER_FILES
         Event/PredictionPickedEvent.h
         Forcefield/FreeConstantForceField.h
         ODE/HybridNewtonRaphson.h
+        ODE/KSolver.h
+        Controller/DummyController.h
         )
 
 set(SOURCE_FILES
@@ -12,6 +14,8 @@ set(SOURCE_FILES
         Event/PredictionPickedEvent.cpp
         Forcefield/FreeConstantForceField.cpp
         ODE/HybridNewtonRaphson.cpp
+        ODE/KSolver.cpp
+        Controller/DummyController.cpp
         )
 
 # Caribou

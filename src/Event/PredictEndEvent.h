@@ -13,7 +13,7 @@ virtual size_t getEventTypeIndex() const override { return PredictEndEvent::s_ev
 static bool checkEventType( const Event* event ) { return event->getEventTypeIndex() == PredictEndEvent::s_eventTypeIndex; }
 virtual const char* getClassName() const override {return name.c_str();}
 
-PredictEndEvent( SReal dt, int id );
+PredictEndEvent( SReal dt);
 PredictEndEvent() {}
 void setDt(SReal sdt){dt = sdt;}
 ~PredictEndEvent() override;
@@ -21,11 +21,8 @@ void setDt(SReal sdt){dt = sdt;}
 SReal getDt() const { return dt; }
 inline static const char* GetClassName() { return "PredictEndEvent"; }
 
-inline  uint getID() { return this->id;}
-inline void setID(const uint id) {this->id = id;}
 protected:
 SReal dt;
-uint id;
 static const size_t s_eventTypeIndex;
 std::string name;
 };

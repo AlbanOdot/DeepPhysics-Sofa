@@ -10,9 +10,7 @@ namespace ode {
 
     class HybridNewtonRaphson : public SofaCaribou::ode::StaticODESolver {
     public:
-        SOFA_CLASS(HybridNewtonRaphson, StaticODESolver
-        );
-
+        SOFA_CLASS(HybridNewtonRaphson, StaticODESolver);
         HybridNewtonRaphson();
 
         template<typename T>
