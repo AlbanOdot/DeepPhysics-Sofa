@@ -24,7 +24,8 @@ namespace ode {
         void computePredictionResidual(const sofa::core::ExecParams *params,
                                        sofa::core::MechanicalParams& mechanical_parameters,
                                        sofa::core::MultiVecDerivId& f_id,
-                                       sofa::component::linearsolver::DefaultMultiMatrixAccessor& accessor);
+                                       sofa::component::linearsolver::DefaultMultiMatrixAccessor& accessor,
+                                       SofaCaribou::solver::LinearSolver * linear_solver);
 
         //Reset Simulation
         void clearSimulationData(sofa::simulation::common::VectorOperations &vop,
@@ -40,6 +41,9 @@ namespace ode {
 
         //Wheter or not we assemble the stiffness matrix before the PredictBeginEvent
         Data<bool> d_early_assemble;
+
+        //Wheter or not we assemble the stiffness matrix before the PredictBeginEvent
+        Data<bool> d_post_assemble;
 
         // Value of the residual from the prediction state
         Data<double> d_prediction_residual;

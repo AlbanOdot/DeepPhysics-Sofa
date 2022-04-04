@@ -53,6 +53,12 @@ namespace DeepPhysicsSofa {
                                                                                     "Wheter or not we assemble the stiffness matrix before the PredictBeginEvent",
                                                                                     true /*is_displayed_in_gui*/,
                                                                                     true /*is_read_only*/)),
+                                                 d_post_assemble(initData(&d_post_assemble,
+                                                                           false,
+                                                                           "post_assemble",
+                                                                           "Wheter or not we assemble the stiffness matrix after the converged solution",
+                                                                           true /*is_displayed_in_gui*/,
+                                                                           true /*is_read_only*/)),
                                                  d_prediction_residual(initData(&d_prediction_residual,
                                                                                 (double) 1e-5,
                                                                                 "prediction_residual",
@@ -132,7 +138,9 @@ namespace DeepPhysicsSofa {
         void HybridNewtonRaphson::computePredictionResidual(const sofa::core::ExecParams *params,
                                                             sofa::core::MechanicalParams& mechanical_parameters,
                                                             sofa::core::MultiVecDerivId& f_id,
-                                                            sofa::component::linearsolver::DefaultMultiMatrixAccessor& accessor
+                                                            sofa::component::linearsolver::DefaultMultiMatrixAccessor& accessor,
+                                                            SofaCaribou::solver::LinearSolver * linear_solver
+
         )
         {
             // ###########################################################################
@@ -157,6 +165,13 @@ namespace DeepPhysicsSofa {
             d_prediction_residual.setValue(SofaCaribou::Algebra::dot(p_F.get(), p_F.get()));
             sofa::helper::AdvancedTimer::stepEnd("UpdateResidual");
 
+            if(d_early_assemble.getValue())
+            {
+                sofa::helper::ScopedAdvancedTimer _t_("MBKBuild");
+                p_A->clear();
+                this->assemble_system_matrix(mechanical_parameters, accessor, p_A.get());
+                linear_solver->set_system_matrix(p_A.get());
+            }
             // If working with rest shapes, initial residual only contains external forces
             // We now call predictBeginEvent in order to catch the external forces
             PredictEndEvent PEev ( this->getContext()->getRootContext()->getDt ());
@@ -263,7 +278,7 @@ namespace DeepPhysicsSofa {
             sofa::component::linearsolver::DefaultMultiMatrixAccessor accessor;
 
             this->clearSimulationData(vop, mop, f_id, dx_id, accessor, linear_solver, newton_iterations);
-            this->computePredictionResidual(params, mechanical_parameters, f_id, accessor);
+            this->computePredictionResidual(params, mechanical_parameters, f_id, accessor, linear_solver);
             // Skip all Newton iterations, if we don't need to solve the ODE
             converged = !d_solve_inversion.getValue();
 
@@ -400,6 +415,8 @@ namespace DeepPhysicsSofa {
                      << "  |R| = "   << std::setw(12) << sqrt(R_squared_norm)
                      << "  |R|/|R0| = "   << std::setw(12) << sqrt(R_squared_norm  / p_squared_residuals[0])
                      << "  |du| / |U| = " << std::setw(12) << sqrt(dx_squared_norm / du_squared_norm)
+                     << "  |du| = " << std::setw(12) << sqrt(dx_squared_norm )
+                     << "  |U| = " << std::setw(12) << sqrt(du_squared_norm)
                      << std::defaultfloat;
                 info << "  Time = " << iteration_time/1000/1000 << " ms";
                 if (linear_solver->is_iterative()) {
@@ -461,6 +478,18 @@ namespace DeepPhysicsSofa {
             if (print_log) {
                 info << "[DIVERGED] The number of Newton iterations reached the maximum of " << newton_iterations << " iterations" << ".\n";
             }
+        }
+
+        if(d_post_assemble.getValue())
+        {
+            sofa::helper::AdvancedTimer::stepBegin("ComputeForce");
+            this->assemble_rhs_vector(mechanical_parameters, accessor, f_id, p_F.get());
+            sofa::helper::AdvancedTimer::stepEnd("ComputeForce");
+
+            sofa::helper::ScopedAdvancedTimer _t_("MBKBuild");
+            p_A->clear();
+            this->assemble_system_matrix(mechanical_parameters, accessor, p_A.get());
+            linear_solver->set_system_matrix(p_A.get());
         }
 
         d_converged.setValue(converged);
